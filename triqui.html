@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Triqui del Color</title>
+<style>
+  :root {
+    --bg: #1b1f2a;
+    --panel: #262c3b;
+    --text: #f2f4f8;
+    --muted: #9aa3b5;
+    --x: #ff7a59;
+    --o: #4fc3f7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  .app { width: 100%; max-width: 440px; background: var(--panel); border-radius: 16px; padding: 24px; box-shadow: 0 10px 30px #0006; }
+  h1 { margin: 0 0 4px; text-align: center; font-size: 1.8rem; }
+  .sub { text-align: center; color: var(--muted); margin: 0 0 20px; font-size: .9rem; }
+  .hidden { display: none !important; }
+
+  label { display: block; margin: 12px 0 4px; color: var(--muted); font-size: .85rem; }
+  input[type=text], select {
+    width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #3a4258;
+    background: #1b1f2a; color: var(--text); font-size: 1rem;
+  }
+  button.primary {
+    width: 100%; margin-top: 20px; padding: 12px; border: 0; border-radius: 10px;
+    background: #6c63ff; color: #fff; font-size: 1.05rem; font-weight: 600; cursor: pointer;
+  }
+  button.primary:hover:not(:disabled) { background: #7d75ff; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+
+  .status { text-align: center; min-height: 3.2em; margin-bottom: 12px; }
+  .status .turn { font-size: 1.2rem; font-weight: 600; }
+  .status .msg { color: var(--muted); font-size: .9rem; margin-top: 2px; }
+
+  .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 auto 16px; max-width: 330px; }
+  .cell {
+    aspect-ratio: 1; border: 0; border-radius: 12px; background: #1b1f2a; color: var(--text);
+    font-size: 3.2rem; font-weight: 700; cursor: pointer; transition: background .15s, transform .1s;
+  }
+  .cell:hover:not(:disabled) { background: #323a50; transform: scale(1.03); }
+  .cell:disabled { cursor: default; }
+  .cell.X { color: var(--x); }
+  .cell.O { color: var(--o); }
+  .cell.win { background: #3b4a2e; }
+  .cell.armed { outline: 3px solid #ffd54f; }
+
+  .guess { background: #1b1f2a; border-radius: 12px; padding: 14px; text-align: center; }
+  .guess p { margin: 0 0 10px; font-size: .95rem; }
+  .colors { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .color-btn {
+    width: 64px; height: 64px; border-radius: 50%; border: 3px solid #0000; cursor: pointer;
+    font-size: 0; transition: transform .1s, border-color .15s;
+  }
+  .color-btn:hover:not(:disabled) { transform: scale(1.1); border-color: #fff; }
+  .color-btn[data-c=rojo]     { background: #e53935; }
+  .color-btn[data-c=azul]     { background: #1e88e5; }
+  .color-btn[data-c=verde]    { background: #43a047; }
+  .color-btn[data-c=amarillo] { background: #fdd835; }
+  .reveal { margin-top: 10px; min-height: 1.4em; font-weight: 600; }
+  .ok { color: #81c784; } .bad { color: #ef9a9a; }
+
+  .final { text-align: center; margin-top: 16px; }
+  .final .lock { color: var(--muted); font-size: .85rem; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>🎨 Triqui del Color</h1>
+  <p class="sub">Adivina el color secreto para poder jugar tu turno</p>
+
+  <!-- Configuración -->
+  <section id="setup">
+    <label for="mode">Modo de juego</label>
+    <select id="mode">
+      <option value="pvp">Jugador vs Jugador</option>
+      <option value="pvc">Jugador vs Computador</option>
+    </select>
+    <label for="n1">Jugador 1 (X)</label>
+    <input type="text" id="n1" value="Jugador 1" maxlength="16">
+    <div id="p2wrap">
+      <label for="n2">Jugador 2 (O)</label>
+      <input type="text" id="n2" value="Jugador 2" maxlength="16">
+    </div>
+    <button class="primary" id="start">Iniciar la única ronda</button>
+  </section>
+
+  <!-- Juego -->
+  <section id="game" class="hidden">
+    <div class="status">
+      <div class="turn" id="turn"></div>
+      <div class="msg" id="msg"></div>
+    </div>
+    <div class="board" id="board"></div>
+    <div class="guess" id="guess">
+      <p>🔒 Hay un color secreto. ¿Cuál es?</p>
+      <div class="colors" id="colors"></div>
+      <div class="reveal" id="reveal"></div>
+    </div>
+    <div class="final hidden" id="final">
+      <button class="primary" id="again" disabled>Nuevo juego (no disponible)</button>
+      <div class="lock">Solo se permite una ronda. El juego ha terminado.</div>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const COLORS = ["rojo", "azul", "verde", "amarillo"];
+  const LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+  const $ = id => document.getElementById(id);
+
+  let roundPlayed = false;           // una sola ronda por sesión de la página
+  let board, players, current, secret, phase, over;
+  // phase: "guess" (debe adivinar color) | "move" (debe poner ficha) | "wait" (animación / PC)
+
+  $("mode").addEventListener("change", () => {
+    const pvc = $("mode").value === "pvc";
+    $("p2wrap").classList.toggle("hidden", pvc);
+  });
+  $("start").addEventListener("click", startGame);
+
+  function startGame() {
+    if (roundPlayed) return;
+    roundPlayed = true;
+    const pvc = $("mode").value === "pvc";
+    players = [
+      { name: $("n1").value.trim() || "Jugador 1", mark: "X", cpu: false },
+      { name: pvc ? "Computador" : ($("n2").value.trim() || "Jugador 2"), mark: "O", cpu: pvc },
+    ];
+    board = Array(9).fill(null);
+    current = 0; over = false;
+    $("setup").classList.add("hidden");
+    $("game").classList.remove("hidden");
+    $("start").disabled = true;
+    buildBoard(); buildColors();
+    beginTurn();
+  }
+
+  function buildBoard() {
+    $("board").innerHTML = "";
+    for (let i = 0; i < 9; i++) {
+      const b = document.createElement("button");
+      b.className = "cell"; b.dataset.i = i; b.disabled = true;
+      b.addEventListener("click", () => onCell(i));
+      $("board").appendChild(b);
+    }
+  }
+  function buildColors() {
+    $("colors").innerHTML = "";
+    COLORS.forEach(c => {
+      const b = document.createElement("button");
+      b.className = "color-btn"; b.dataset.c = c; b.title = c; b.textContent = c;
+      b.addEventListener("click", () => onGuess(c));
+      $("colors").appendChild(b);
+    });
+  }
+
+  function render() {
+    const cells = $("board").children;
+    board.forEach((v, i) => {
+      cells[i].textContent = v || "";
+      cells[i].className = "cell" + (v ? " " + v : "") + (phase === "move" && !v ? " armed" : "");
+      cells[i].disabled = over || phase !== "move" || !!v || players[current].cpu;
+    });
+    document.querySelectorAll(".color-btn").forEach(b =>
+      b.disabled = over || phase !== "guess" || players[current].cpu);
+  }
+
+  function beginTurn() {
+    secret = COLORS[Math.floor(Math.random() * COLORS.length)];
+    phase = "guess";
+    const p = players[current];
+    $("turn").textContent = `Turno de ${p.name} (${p.mark})`;
+    $("msg").textContent = "Adivina el color secreto para poder jugar.";
+    render();
+    if (p.cpu) {
+      phase = "wait"; render();
+      $("msg").textContent = "El computador está eligiendo un color…";
+      setTimeout(() => onGuess(COLORS[Math.floor(Math.random() * COLORS.length)], true), 900);
+    }
+  }
+
+  function onGuess(color, byCpu = false) {
+    if (over || (phase !== "guess" && !byCpu)) return;
+    const p = players[current];
+    const ok = color === secret;
+    const r = $("reveal");
+    if (ok) {
+      r.className = "reveal ok";
+      r.textContent = `✅ ¡${p.name} acertó! El color era ${secret}.`;
+      phase = "move";
+      $("msg").textContent = p.cpu ? "El computador va a jugar…" : "¡Acertaste! Elige una casilla.";
+      render();
+      if (p.cpu) setTimeout(cpuMove, 900);
+    } else {
+      r.className = "reveal bad";
+      r.textContent = `❌ ${p.name} dijo ${color}. El color era ${secret}. Pierde el turno.`;
+      phase = "wait"; render();
+      setTimeout(() => { current = 1 - current; beginTurn(); }, 1500);
+    }
+  }
+
+  function onCell(i) {
+    if (over || phase !== "move" || board[i] || players[current].cpu) return;
+    place(i);
+  }
+
+  function place(i) {
+    board[i] = players[current].mark;
+    const line = LINES.find(l => l.every(k => board[k] === players[current].mark));
+    if (line) return finish(line);
+    if (board.every(Boolean)) return finish(null);
+    current = 1 - current;
+    $("reveal").textContent = "";
+    beginTurn();
+  }
+
+  function cpuMove() {
+    const me = players[current].mark, opp = players[1 - current].mark;
+    const empty = board.map((v, i) => v ? -1 : i).filter(i => i >= 0);
+    const find = m => {
+      for (const l of LINES) {
+        const vals = l.map(k => board[k]);
+        if (vals.filter(v => v === m).length === 2 && vals.includes(null)) return l[vals.indexOf(null)];
+      }
+      return -1;
+    };
+    let mv = find(me);                                   // ganar
+    if (mv < 0) mv = find(opp);                          // bloquear
+    if (mv < 0 && board[4] === null) mv = 4;             // centro
+    if (mv < 0) {
+      const corners = [0,2,6,8].filter(i => board[i] === null);
+      mv = corners.length ? corners[Math.floor(Math.random() * corners.length)]
+                          : empty[Math.floor(Math.random() * empty.length)];
+    }
+    place(mv);
+  }
+
+  function finish(line) {
+    over = true; phase = "wait"; render();
+    if (line) line.forEach(i => $("board").children[i].classList.add("win"));
+    $("turn").textContent = line ? `🏆 ¡Ganó ${players[current].name} (${players[current].mark})!` : "🤝 ¡Empate!";
+    $("msg").textContent = "Fin de la ronda.";
+    $("guess").classList.add("hidden");
+    $("final").classList.remove("hidden");
+  }
+
+  $("again").addEventListener("click", () => {}); // deshabilitado a propósito: una sola ronda
+})();
+</script>
+</body>
+</html>
